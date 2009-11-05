@@ -75,7 +75,7 @@ class RailsPath
   def basename
     File.basename(@filepath)
   end
-
+  
   def dirname
     File.dirname(@filepath)
   end
@@ -102,7 +102,7 @@ class RailsPath
     when :view       then name = dirname.split('/').pop
     when :functional_test then name.sub!(/_controller_test$/, '')
     else
-      if !File.file?(File.join(rails_root, stubs[:controller], '/', name + '_controller.rb'))
+      if !File.file?(File.join(root_dir, stubs[:controller], '/', name + '_controller.rb'))
         name = Inflector.pluralize(name)
       end
     end
@@ -138,6 +138,10 @@ class RailsPath
     #    return @filepath[0...index]
     #  end
     #end
+  end
+
+  def root_dir
+    dirname.sub(/\/#{stubs[file_type]}.*/, '')
   end
 
   # This is used in :file_type and :rails_path_for_view
@@ -245,7 +249,7 @@ class RailsPath
     return nil if file_type.nil?
     return rails_path_for_view if type == :view
     if TextMate.project_directory
-      base_path = File.join(rails_root, stubs[type], modules)
+      base_path = File.join(root_dir, stubs[type], modules)
       extn      = default_extension_for(type)
       file_name = select_controller_name(type, base_path, extn)
       RailsPath.new(File.join(base_path, file_name + extn))
@@ -261,16 +265,16 @@ class RailsPath
     if view_format
       VIEW_EXTENSIONS.each do |ext|
         filename_with_extension = "#{action_name}.#{view_format}.#{ext}"
-        existing_view = File.join(rails_root, stubs[:view], modules, controller_name, filename_with_extension)
+        existing_view = File.join(root_dir, stubs[:view], modules, controller_name, filename_with_extension)
         return RailsPath.new(existing_view) if File.exist?(existing_view)
       end
     end
     VIEW_EXTENSIONS.each do |ext|
       filename_with_extension = "#{action_name}.#{ext}"
-      existing_view = File.join(rails_root, stubs[:view], modules, controller_name, filename_with_extension)
+      existing_view = File.join(root_dir, stubs[:view], modules, controller_name, filename_with_extension)
       return RailsPath.new(existing_view) if File.exist?(existing_view)
     end
-    default_view = File.join(rails_root, stubs[:view], modules, controller_name, action_name + default_extension_for(:view, view_format))
+    default_view = File.join(root_dir, stubs[:view], modules, controller_name, action_name + default_extension_for(:view, view_format))
     return RailsPath.new(default_view)
   end
 
@@ -295,20 +299,24 @@ class RailsPath
   def wants_haml
     @wants_html ||= File.file?(File.join(rails_root, "vendor/plugins/haml/", "init.rb"))
   end
+  
+  def wants_rspec
+    @wants_rspec ||= File.exists?(File.join(rails_root, "spec"))
+  end
 
   def stubs
     { :controller => 'app/controllers',
       :model => 'app/models',
-      :helper => 'app/helpers/',
-      :view => 'app/views/',
+      :helper => 'app/helpers',
+      :view => 'app/views',
       :config => 'config',
       :lib => 'lib',
       :log => 'log',
       :javascript => 'public/javascripts',
       :stylesheet => wants_haml ? 'public/stylesheets/sass' : 'public/stylesheets',
-      :functional_test => 'test/functional',
-      :unit_test => 'test/unit',
-      :fixture => 'test/fixtures'}
+      :functional_test => wants_rspec ? 'spec/controllers' : 'test/functional',
+      :unit_test => wants_rspec ? 'spec/models' : 'test/unit',
+      :fixture => wants_rspec ? 'spec/fixtures' : 'test/fixtures'}
   end
 
   def ==(other)

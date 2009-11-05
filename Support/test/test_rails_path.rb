@@ -2,12 +2,14 @@ require File.dirname(__FILE__) + '/test_helper'
 
 require 'text_mate_mock'
 require 'rails/rails_path'
+require 'rubygems'
+require 'ruby-debug'
 
 class RailsPathTest < Test::Unit::TestCase
   def setup
     TextMate.line_number = '1'
     TextMate.column_number = '1'
-    TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/app_fixtures')
+    TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_rails')
     @rp_controller = RailsPath.new(FIXTURE_PATH + '/app/controllers/user_controller.rb')
     @rp_controller_with_module = RailsPath.new(FIXTURE_PATH + '/app/controllers/admin/base_controller.rb')
     @rp_view = RailsPath.new(FIXTURE_PATH + '/app/views/user/new.rhtml')
@@ -18,7 +20,7 @@ class RailsPathTest < Test::Unit::TestCase
   end
 
   def test_rails_root
-    assert_equal File.expand_path(File.dirname(__FILE__) + '/app_fixtures'), RailsPath.new.rails_root
+    assert_equal File.expand_path(File.dirname(__FILE__) + '/test_apps/app_rails'), RailsPath.new.rails_root
   end
 
   def test_extension
@@ -98,31 +100,59 @@ class RailsPathTest < Test::Unit::TestCase
     assert_equal [13, 'js'], current_file.respond_to_format
   end
 
-  def test_rails_path_for
-    partners = [
-      # Basic tests
-      [FIXTURE_PATH + '/app/controllers/user_controller.rb', :helper, FIXTURE_PATH + '/app/helpers/user_helper.rb'],
-      [FIXTURE_PATH + '/app/controllers/user_controller.rb', :javascript, FIXTURE_PATH + '/public/javascripts/user.js'],
-      [FIXTURE_PATH + '/app/controllers/user_controller.rb', :functional_test, FIXTURE_PATH + '/test/functional/user_controller_test.rb'],
-      [FIXTURE_PATH + '/app/helpers/user_helper.rb', :controller, FIXTURE_PATH + '/app/controllers/users_controller.rb'],
-      [FIXTURE_PATH + '/app/models/user.rb', :controller, FIXTURE_PATH + '/app/controllers/users_controller.rb'],
-      [FIXTURE_PATH + '/app/models/post.rb', :controller, FIXTURE_PATH + '/app/controllers/posts_controller.rb'],
-      [FIXTURE_PATH + '/test/fixtures/users.yml', :model, FIXTURE_PATH + '/app/models/user.rb'],
-      [FIXTURE_PATH + '/spec/fixtures/users.yml', :model, FIXTURE_PATH + '/app/models/user.rb'],
-      [FIXTURE_PATH + '/app/controllers/user_controller.rb', :model, FIXTURE_PATH + '/app/models/user.rb'],
-      [FIXTURE_PATH + '/test/fixtures/users.yml', :unit_test, FIXTURE_PATH + '/test/unit/user_test.rb'],
-      [FIXTURE_PATH + '/app/models/user.rb', :fixture, FIXTURE_PATH + '/test/fixtures/users.yml'],
-      # With modules
-      [FIXTURE_PATH + '/app/controllers/admin/base_controller.rb', :helper, FIXTURE_PATH + '/app/helpers/admin/base_helper.rb'],
-      [FIXTURE_PATH + '/app/controllers/admin/inside/outside_controller.rb', :javascript, FIXTURE_PATH + '/public/javascripts/admin/inside/outside.js'],
-      [FIXTURE_PATH + '/app/controllers/admin/base_controller.rb', :functional_test, FIXTURE_PATH + '/test/functional/admin/base_controller_test.rb'],
-      [FIXTURE_PATH + '/app/helpers/admin/base_helper.rb', :controller, FIXTURE_PATH + '/app/controllers/admin/base_controller.rb'],
-    ]
-    # TODO Add [posts.yml, :model, post.rb]
-    for pair in partners
-      assert_equal RailsPath.new(pair[2]), RailsPath.new(pair[0]).rails_path_for(pair[1])
-    end
+  def test_root_dir
+    assert_root_dir(FIXTURE_PATH + '/app/controllers/user_controller.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/controllers/admin/base_controller.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/controllers/admin/inside/outside_controller.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/helpers/user_helper.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/helpers/admin/base_helper.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/views/users/index.html.erb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/models/user.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/app/models/deeper/user.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/test/fixtures/user.yml', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/test/functional/user_controller_test.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/test/unit/user_test.rb', FIXTURE_PATH + '')
+    assert_root_dir(FIXTURE_PATH + '/engines/engy/app/models/user.rb', FIXTURE_PATH + '/engines/engy')
+  end
 
+  def test_root_dir_for_rspec_app
+    rspec_fixture_path = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_with_rspec')
+    TextMate.project_directory = rspec_fixture_path
+    assert_root_dir(rspec_fixture_path + '/spec/fixtures/user.yml', rspec_fixture_path)
+  ensure
+    TextMate.project_directory = FIXTURE_PATH
+  end
+  
+  def test_rails_path_for_rspec_app
+    rspec_fixture_path = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_with_rspec')
+    TextMate.project_directory = rspec_fixture_path
+    assert_alternate_file(rspec_fixture_path + '/spec/fixtures/users.yml', :model, rspec_fixture_path + '/app/models/user.rb')
+  ensure
+    TextMate.project_directory = FIXTURE_PATH
+  end
+
+  def test_rails_path_for_rails_app
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/user_controller.rb', :helper, FIXTURE_PATH + '/app/helpers/user_helper.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/user_controller.rb', :javascript, FIXTURE_PATH + '/public/javascripts/user.js')
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/user_controller.rb', :functional_test, FIXTURE_PATH + '/test/functional/user_controller_test.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/helpers/user_helper.rb', :controller, FIXTURE_PATH + '/app/controllers/users_controller.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/models/user.rb', :controller, FIXTURE_PATH + '/app/controllers/users_controller.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/models/post.rb', :controller, FIXTURE_PATH + '/app/controllers/posts_controller.rb')
+    assert_alternate_file(FIXTURE_PATH + '/test/fixtures/users.yml', :model, FIXTURE_PATH + '/app/models/user.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/user_controller.rb', :model, FIXTURE_PATH + '/app/models/user.rb')
+    assert_alternate_file(FIXTURE_PATH + '/test/fixtures/users.yml', :unit_test, FIXTURE_PATH + '/test/unit/user_test.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/models/user.rb', :fixture, FIXTURE_PATH + '/test/fixtures/users.yml')
+    # With modules
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/admin/base_controller.rb', :helper, FIXTURE_PATH + '/app/helpers/admin/base_helper.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/admin/inside/outside_controller.rb', :javascript, FIXTURE_PATH + '/public/javascripts/admin/inside/outside.js')
+    assert_alternate_file(FIXTURE_PATH + '/app/controllers/admin/base_controller.rb', :functional_test, FIXTURE_PATH + '/test/functional/admin/base_controller_test.rb')
+    assert_alternate_file(FIXTURE_PATH + '/app/helpers/admin/base_helper.rb', :controller, FIXTURE_PATH + '/app/controllers/admin/base_controller.rb')
+    # TODO Add [posts.yml, :model, post.rb]
+    # Support for Rails engines
+    assert_alternate_file(FIXTURE_PATH + '/engines/engy/app/controllers/users_controller.rb', :helper, FIXTURE_PATH + '/engines/engy/app/helpers/users_helper.rb')
+    assert_alternate_file(FIXTURE_PATH + '/engines/engy/app/controllers/admin/users_controller.rb', :helper, FIXTURE_PATH + '/engines/engy/app/helpers/admin/users_helper.rb')
+    assert_alternate_file(FIXTURE_PATH + '/engines/engy/app/models/user.rb', :helper, FIXTURE_PATH + '/engines/engy/app/helpers/users_helper.rb')
+    
     # Test controller to view
     ENV['RAILS_VIEW_EXT'] = nil
     TextMate.line_number = '6'
@@ -229,20 +259,31 @@ class RailsPathTest < Test::Unit::TestCase
     assert_equal(:controller, RailsPath.new(FIXTURE_PATH + '/app/views/books/new.haml').best_match)
   end
 
+  def test_wants_rspec
+    begin
+      assert_equal false, @rp_view.wants_rspec
+      rspec_fixture_path = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_with_rspec')
+      TextMate.project_directory = rspec_fixture_path
+      assert_equal true, RailsPath.new(rspec_fixture_path + '/app/models/user.rb').wants_rspec
+    ensure
+      TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_rails')
+    end
+  end
+
   def test_wants_haml
     begin
       assert_equal false, @rp_view.wants_haml
-      haml_fixture_path = File.expand_path(File.dirname(__FILE__) + '/fixtures')
+      haml_fixture_path = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_with_haml')
       TextMate.project_directory = haml_fixture_path
       assert_equal true, RailsPath.new(haml_fixture_path + '/app/views/posts/index.html.haml').wants_haml
     ensure
-      TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/app_fixtures')
+      TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_rails')
     end
   end
 
   def test_haml
     begin
-      haml_fixture_path = File.expand_path(File.dirname(__FILE__) + '/fixtures')
+      haml_fixture_path = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_with_haml')
       TextMate.project_directory = haml_fixture_path
 
       assert_equal [], RailsPath.new(haml_fixture_path + '/public/stylesheets/sass/posts.sass').modules
@@ -282,8 +323,18 @@ class RailsPathTest < Test::Unit::TestCase
       assert_equal RailsPath.new(haml_fixture_path + '/app/helpers/posts_helper.rb'), current_file.rails_path_for(:helper)
 
     ensure
-      TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/app_fixtures')
+      TextMate.project_directory = File.expand_path(File.dirname(__FILE__) + '/test_apps/app_rails')
     end
   end
+
+  private
+  
+    def assert_alternate_file(from, move, to)
+      assert_equal RailsPath.new(to), RailsPath.new(from).rails_path_for(move), "from #{from} to #{to} via #{move} fails"
+    end
+
+    def assert_root_dir(path_to_file, expected_root_dir)
+      assert_equal expected_root_dir, RailsPath.new(path_to_file).root_dir, "#{expected_root_dir} is not the root directory of #{path_to_file}"
+    end
 
 end
